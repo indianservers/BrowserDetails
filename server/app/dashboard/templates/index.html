@@ -80,6 +80,10 @@
         <button id="send-message" disabled>Send message</button>
         <button id="show-image" disabled>Show image</button>
         <button id="open-frame" disabled>Open frame</button>
+        <button id="show-banner" disabled>Show banner</button>
+        <button id="highlight-element" disabled>Highlight</button>
+        <button id="scroll-element" disabled>Scroll</button>
+        <button id="clear-overlays" disabled>Clear UI</button>
       </div>
       <div class="interaction-panel">
         <input id="support-title" maxlength="80" placeholder="Support title">
@@ -87,6 +91,7 @@
         <input id="support-image-url" maxlength="1024" placeholder="https://example.com/support-image.png">
         <input id="support-image-caption" maxlength="300" placeholder="Optional image caption">
         <input id="support-frame-url" maxlength="512" placeholder="Approved support page URL for iframe">
+        <input id="support-selector" maxlength="160" placeholder="CSS selector, for example #checkout-button">
       </div>
       <div class="label" id="action-status"></div>
       <pre id="details">No client selected.</pre>
@@ -138,6 +143,10 @@
       $('send-message').disabled = !selected;
       $('show-image').disabled = !selected;
       $('open-frame').disabled = !selected;
+      $('show-banner').disabled = !selected;
+      $('highlight-element').disabled = !selected;
+      $('scroll-element').disabled = !selected;
+      $('clear-overlays').disabled = !selected;
       const events = await fetch('/api/dashboard/sessions/' + encodeURIComponent(id) + '/events').then(r => r.json());
       $('details').textContent = JSON.stringify({ overview: selected, timeline: events }, null, 2);
     }
@@ -203,12 +212,53 @@
         url: frameUrl
       });
     }
+    async function showSupportBanner() {
+      const message = $('support-message').value.trim();
+      if (!message) {
+        $('action-status').textContent = 'Enter a banner message first.';
+        return;
+      }
+      await sendAction('SHOW_SUPPORT_BANNER', {
+        message,
+        tone: 'info',
+        duration_seconds: 12
+      });
+    }
+    async function highlightPageElement() {
+      const selector = $('support-selector').value.trim();
+      if (!selector) {
+        $('action-status').textContent = 'Enter a selector first.';
+        return;
+      }
+      await sendAction('HIGHLIGHT_PAGE_ELEMENT', {
+        selector,
+        label: $('support-message').value.trim() || 'Support highlighted this section.'
+      });
+    }
+    async function scrollToPageElement() {
+      const selector = $('support-selector').value.trim();
+      if (!selector) {
+        $('action-status').textContent = 'Enter a selector first.';
+        return;
+      }
+      await sendAction('SCROLL_TO_PAGE_ELEMENT', {
+        selector,
+        label: $('support-message').value.trim() || 'Support moved you to this section.'
+      });
+    }
+    async function clearClientOverlays() {
+      await sendAction('CLEAR_SUPPORT_OVERLAYS', {});
+    }
     $('search').oninput = () => load();
     $('state').onchange = () => load();
     $('ask-username').onclick = () => requestSupportUsername();
     $('send-message').onclick = () => sendSupportMessage();
     $('show-image').onclick = () => showSupportImage();
     $('open-frame').onclick = () => openSupportFrame();
+    $('show-banner').onclick = () => showSupportBanner();
+    $('highlight-element').onclick = () => highlightPageElement();
+    $('scroll-element').onclick = () => scrollToPageElement();
+    $('clear-overlays').onclick = () => clearClientOverlays();
     setInterval(load, 5000);
     load();
   </script>

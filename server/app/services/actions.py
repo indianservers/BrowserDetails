@@ -60,6 +60,30 @@ class ApprovedSupportIframeParams(BaseModel):
     title: str = Field(default="Support page", min_length=1, max_length=80)
 
 
+class SupportBannerParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str = Field(min_length=1, max_length=240)
+    tone: str = Field(default="info", pattern="^(info|success|warning|error)$")
+    duration_seconds: int = Field(default=10, ge=3, le=120)
+
+
+class PageElementParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    selector: str = Field(min_length=1, max_length=160)
+    label: str | None = Field(default=None, max_length=120)
+
+    @field_validator("selector")
+    @classmethod
+    def safe_selector(cls, value: str) -> str:
+        blocked = ["script", "iframe", "object", "embed", "input[type=password]", "[type=password]"]
+        lowered = value.lower()
+        if any(item in lowered for item in blocked):
+            raise ValueError("Selector targets an unsafe element type")
+        if any(token in value for token in ["<", ">", "{", "}"]):
+            raise ValueError("Selector contains unsupported characters")
+        return value
+
+
 ACTION_DESCRIPTIONS = {
     "REFRESH_BROWSER_INFORMATION": "Refresh browser diagnostics visible to this page.",
     "MEASURE_API_LATENCY": "Measure API latency from this page.",
@@ -75,6 +99,10 @@ ACTION_DESCRIPTIONS = {
     "DISPLAY_SUPPORT_MESSAGE": "Display a visible in-page support message.",
     "DISPLAY_SUPPORT_IMAGE": "Display a visible in-page support image.",
     "REQUEST_SUPPORT_USERNAME": "Ask the user for a non-sensitive support username or display name.",
+    "SHOW_SUPPORT_BANNER": "Show a visible support banner on the page.",
+    "HIGHLIGHT_PAGE_ELEMENT": "Highlight a page element selected by an approved selector.",
+    "SCROLL_TO_PAGE_ELEMENT": "Scroll to a page element selected by an approved selector.",
+    "CLEAR_SUPPORT_OVERLAYS": "Clear support overlays created by the monitoring SDK.",
     "ASK_REFRESH_PAGE": "Ask the user to refresh this page.",
     "OPEN_APPROVED_SUPPORT_PAGE": "Ask the user to open an approved support page.",
     "OPEN_APPROVED_SUPPORT_IFRAME": "Open an approved support page in a visible in-page frame.",
@@ -88,6 +116,9 @@ ACTION_SCHEMAS = {
     "DISPLAY_SUPPORT_MESSAGE": SupportMessageParams,
     "DISPLAY_SUPPORT_IMAGE": SupportImageParams,
     "REQUEST_SUPPORT_USERNAME": SupportUsernameParams,
+    "SHOW_SUPPORT_BANNER": SupportBannerParams,
+    "HIGHLIGHT_PAGE_ELEMENT": PageElementParams,
+    "SCROLL_TO_PAGE_ELEMENT": PageElementParams,
     "OPEN_APPROVED_SUPPORT_PAGE": ApprovedSupportUrlParams,
     "OPEN_APPROVED_SUPPORT_IFRAME": ApprovedSupportIframeParams,
 }

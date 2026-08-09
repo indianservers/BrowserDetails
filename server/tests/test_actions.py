@@ -47,3 +47,18 @@ def test_accepts_support_iframe_params():
 def test_rejects_extra_iframe_params():
     with pytest.raises(ValueError):
         validate_action_parameters("OPEN_APPROVED_SUPPORT_IFRAME", {"url": "https://example.com/support", "script": "alert(1)"})
+
+
+def test_accepts_support_banner_command():
+    result = validate_action_parameters("SHOW_SUPPORT_BANNER", {"message": "Please look here.", "tone": "info"})
+    assert result["message"] == "Please look here."
+
+
+def test_accepts_highlight_selector_command():
+    result = validate_action_parameters("HIGHLIGHT_PAGE_ELEMENT", {"selector": "#checkout-button", "label": "Click here"})
+    assert result["selector"] == "#checkout-button"
+
+
+def test_rejects_unsafe_selector_command():
+    with pytest.raises(ValueError):
+        validate_action_parameters("SCROLL_TO_PAGE_ELEMENT", {"selector": "input[type=password]"})

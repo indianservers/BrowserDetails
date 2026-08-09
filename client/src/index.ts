@@ -17,6 +17,7 @@ type InitOptions = {
   allowedSupportUrls?: string[];
   approvedEventNames?: string[];
   approvedMetadataKeys?: string[];
+  approvedSelectors?: string[];
   maxQueueSize?: number;
   maxQueueAgeMs?: number;
   heartbeatSeconds?: number;
@@ -684,6 +685,69 @@ function showSupportIframe(title: string, frameUrl: string) {
   });
 }
 
+function clearSupportUi() {
+  document.getElementById("client-monitor-support-overlay")?.remove();
+  document.getElementById("client-monitor-support-banner")?.remove();
+  document.querySelectorAll("[data-client-monitor-highlight]").forEach((element) => {
+    const htmlElement = element as HTMLElement;
+    htmlElement.style.outline = htmlElement.dataset.clientMonitorOldOutline || "";
+    htmlElement.style.boxShadow = htmlElement.dataset.clientMonitorOldBoxShadow || "";
+    htmlElement.removeAttribute("data-client-monitor-highlight");
+    delete htmlElement.dataset.clientMonitorOldOutline;
+    delete htmlElement.dataset.clientMonitorOldBoxShadow;
+  });
+}
+
+function selectorAllowed(selector: string): boolean {
+  if (/[<>{}]/.test(selector)) return false;
+  if (/script|iframe|object|embed|input\[type=['"]?password/i.test(selector)) return false;
+  if (!options?.approvedSelectors?.length) return true;
+  return options.approvedSelectors.includes(selector);
+}
+
+function findAllowedElement(selector: string): HTMLElement | null {
+  if (!selectorAllowed(selector)) return null;
+  try {
+    const element = document.querySelector(selector);
+    return element instanceof HTMLElement ? element : null;
+  } catch {
+    return null;
+  }
+}
+
+function showSupportBanner(message: string, tone: string, durationSeconds: number) {
+  document.getElementById("client-monitor-support-banner")?.remove();
+  const colors: Record<string, string> = {
+    info: "#0f766e",
+    success: "#15803d",
+    warning: "#b45309",
+    error: "#b91c1c"
+  };
+  const banner = document.createElement("div");
+  banner.id = "client-monitor-support-banner";
+  banner.textContent = message.slice(0, 240);
+  banner.style.cssText = `position:fixed;left:16px;right:16px;bottom:16px;z-index:2147483647;background:${colors[tone] || colors.info};color:#fff;border-radius:8px;padding:12px 14px;font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:14px;line-height:1.35;box-shadow:0 18px 60px rgba(15,23,42,.28);`;
+  document.body.append(banner);
+  window.setTimeout(() => banner.remove(), Math.max(3, Math.min(120, durationSeconds)) * 1000);
+}
+
+function highlightElement(selector: string, label?: string) {
+  const element = findAllowedElement(selector);
+  if (!element) return false;
+  element.dataset.clientMonitorOldOutline = element.style.outline;
+  element.dataset.clientMonitorOldBoxShadow = element.style.boxShadow;
+  element.dataset.clientMonitorHighlight = "true";
+  element.style.outline = "3px solid #14b8a6";
+  element.style.boxShadow = "0 0 0 8px rgba(20,184,166,.25)";
+  if (label) showSupportBanner(label, "info", 8);
+  window.setTimeout(() => {
+    element.style.outline = element.dataset.clientMonitorOldOutline || "";
+    element.style.boxShadow = element.dataset.clientMonitorOldBoxShadow || "";
+    element.removeAttribute("data-client-monitor-highlight");
+  }, 10000);
+  return true;
+}
+
 async function measureApiLatency(samples: number) {
   const timings: number[] = [];
   for (let index = 0; index < samples; index += 1) {
@@ -758,6 +822,30 @@ async function handleAction(action: { action_id: string; type: string; parameter
         await complete({ prompted: true, accepted: true, username: trimmed });
         break;
       }
+      case "SHOW_SUPPORT_BANNER":
+        showSupportBanner(String(params.message || ""), String(params.tone || "info"), Number(params.duration_seconds || 10));
+        await complete({ displayed: true });
+        break;
+      case "HIGHLIGHT_PAGE_ELEMENT": {
+        const highlighted = highlightElement(String(params.selector || ""), params.label ? String(params.label) : undefined);
+        await complete({ highlighted, selector: highlighted ? String(params.selector || "") : undefined });
+        break;
+      }
+      case "SCROLL_TO_PAGE_ELEMENT": {
+        const element = findAllowedElement(String(params.selector || ""));
+        if (!element) {
+          await complete({ scrolled: false, reason: "element_not_found_or_not_allowed" });
+          break;
+        }
+        element.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+        if (params.label) showSupportBanner(String(params.label), "info", 8);
+        await complete({ scrolled: true });
+        break;
+      }
+      case "CLEAR_SUPPORT_OVERLAYS":
+        clearSupportUi();
+        await complete({ cleared: true });
+        break;
       case "ASK_REFRESH_PAGE": {
         const accepted = confirmAndRun("Support requested a page refresh.", () => location.reload());
         await complete({ prompted: true, accepted });
