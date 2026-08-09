@@ -1,0 +1,53 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: browser_monitor
+      MYSQL_USER: monitor
+      MYSQL_PASSWORD: monitor
+      MYSQL_ROOT_PASSWORD: monitor_root
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  server:
+    build: ./server
+    env_file: .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+
+  worker:
+    build: ./server
+    env_file: .env
+    command: ["python", "-m", "app.workers.retention"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - server
+    ports:
+      - "8080:80"
+
+volumes:
+  mysql-data:

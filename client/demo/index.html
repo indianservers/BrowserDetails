@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Client Monitor Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; line-height: 1.5; }
+    button { padding: 10px 14px; margin-right: 8px; border: 1px solid #ccd2da; border-radius: 6px; background: white; }
+    pre { background: #f4f6f8; padding: 12px; border-radius: 8px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>Client Monitor Demo</h1>
+  <p>This page demonstrates transparent, consent-based browser diagnostics for the current page only.</p>
+  <button id="grant">Grant consent</button>
+  <button id="withdraw">Withdraw consent</button>
+  <button id="event">Track approved event</button>
+  <pre id="status"></pre>
+  <script type="module">
+    import { ClientMonitor } from "../src/index.ts";
+    ClientMonitor.init({
+      projectId: "PUBLIC_DEMO_PROJECT",
+      endpoint: "http://localhost:8000",
+      consent: false,
+      collectPerformance: true,
+      collectErrors: true,
+      collectPageTitle: true,
+      approvedEventNames: ["lesson_opened", "identity_reference_set", "diagnostics_refreshed"],
+      approvedMetadataKeys: ["lesson_id", "reference"],
+      allowedSupportUrls: ["https://example.com/support"]
+    });
+    grant.onclick = () => ClientMonitor.setConsent(true);
+    withdraw.onclick = () => ClientMonitor.setConsent(false);
+    event.onclick = () => ClientMonitor.track("lesson_opened", { lesson_id: "algebra-101" });
+    setInterval(() => status.textContent = JSON.stringify(ClientMonitor.getStatus(), null, 2), 1000);
+  </script>
+</body>
+</html>

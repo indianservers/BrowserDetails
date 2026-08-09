@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser Monitor</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #f7f8fa; --panel: #ffffff; --line: #d5d9e2; --text: #1c2430; --muted: #64748b; --accent: #0f766e; --warn: #b45309; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #111417; --panel: #181d22; --line: #303842; --text: #e5e7eb; --muted: #9aa4b2; --accent: #2dd4bf; --warn: #fbbf24; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; background: var(--bg); color: var(--text); }
+    header { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: 1px solid var(--line); background: var(--panel); }
+    header h1 { font-size: 18px; margin: 0; font-weight: 650; }
+    main { display: grid; grid-template-columns: 280px 1fr 380px; min-height: calc(100vh - 56px); }
+    aside, section { border-right: 1px solid var(--line); padding: 14px; overflow: auto; }
+    .right { border-right: 0; }
+    .cards { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .card, .row, details { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+    .card { padding: 12px; }
+    .label { color: var(--muted); font-size: 12px; }
+    .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+    details { margin-bottom: 8px; padding: 8px 10px; }
+    summary { cursor: pointer; font-weight: 650; }
+    .row { display: grid; grid-template-columns: 12px 1fr auto; gap: 10px; align-items: center; padding: 10px; margin-bottom: 8px; cursor: pointer; }
+    .row:hover { border-color: var(--accent); }
+    .dot { width: 10px; height: 10px; border-radius: 99px; background: var(--muted); }
+    .ACTIVE, .CONNECTED { background: var(--accent); }
+    .IDLE, .BACKGROUND { background: var(--warn); }
+    input, select, button { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--panel); color: var(--text); }
+    .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+    .workspace h2 { margin-top: 0; }
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .tabs button { cursor: pointer; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; }
+    .interaction-panel { display: grid; gap: 8px; margin: 0 0 10px; }
+    .interaction-panel textarea { min-height: 78px; resize: vertical; }
+    .interaction-panel textarea, .interaction-panel input { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--panel); color: var(--text); }
+    .actions button:disabled { opacity: .45; cursor: not-allowed; }
+    #action-status { min-height: 18px; margin-bottom: 8px; }
+    pre { white-space: pre-wrap; word-break: break-word; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+    @media (max-width: 1100px) { main { grid-template-columns: 230px 1fr; } .right { grid-column: 1 / -1; border-top: 1px solid var(--line); } .cards { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 720px) { main { display: block; } aside, section { border-right: 0; border-bottom: 1px solid var(--line); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Browser Monitor</h1>
+    <span class="label">Consent-based diagnostics and support</span>
+  </header>
+  <main>
+    <aside>
+      <details open><summary>Online clients</summary><div id="tree-online"></div></details>
+      <details open><summary>Active clients</summary><div id="tree-active"></div></details>
+      <details><summary>Idle clients</summary><div id="tree-idle"></div></details>
+      <details><summary>Background-tab clients</summary><div id="tree-background"></div></details>
+      <details><summary>Offline clients</summary><div id="tree-offline"></div></details>
+      <details><summary>Desktop</summary><div id="tree-desktop"></div></details>
+      <details><summary>Mobile</summary><div id="tree-mobile"></div></details>
+    </aside>
+    <section>
+      <div class="cards" id="cards"></div>
+      <div class="toolbar">
+        <input id="search" placeholder="Search sessions">
+        <select id="state">
+          <option value="">All states</option>
+          <option>CONNECTED</option><option>ACTIVE</option><option>IDLE</option><option>BACKGROUND</option><option>OFFLINE</option><option>DISCONNECTED</option>
+        </select>
+      </div>
+      <div id="sessions"></div>
+    </section>
+    <section class="right workspace">
+      <h2 id="selected-title">Select a client</h2>
+      <div class="tabs">
+        <button data-tab="overview">Overview</button>
+        <button data-tab="timeline">Timeline</button>
+        <button data-tab="logs">Logs</button>
+      </div>
+      <div class="actions">
+        <button id="ask-username" disabled>Ask username</button>
+        <button id="send-message" disabled>Send message</button>
+        <button id="show-image" disabled>Show image</button>
+        <button id="open-frame" disabled>Open frame</button>
+      </div>
+      <div class="interaction-panel">
+        <input id="support-title" maxlength="80" placeholder="Support title">
+        <textarea id="support-message" maxlength="1000" placeholder="Message to show in the client browser"></textarea>
+        <input id="support-image-url" maxlength="1024" placeholder="https://example.com/support-image.png">
+        <input id="support-image-caption" maxlength="300" placeholder="Optional image caption">
+        <input id="support-frame-url" maxlength="512" placeholder="Approved support page URL for iframe">
+      </div>
+      <div class="label" id="action-status"></div>
+      <pre id="details">No client selected.</pre>
+    </section>
+  </main>
+  <script>
+    let sessions = [];
+    let selected = null;
+    const $ = (id) => document.getElementById(id);
+    async function load() {
+      const [summary, list] = await Promise.all([
+        fetch('/api/dashboard/summary').then(r => r.json()),
+        fetch('/api/dashboard/sessions?q=' + encodeURIComponent($('search').value) + '&state=' + encodeURIComponent($('state').value)).then(r => r.json())
+      ]);
+      sessions = list;
+      $('cards').innerHTML = [
+        ['Total visitors', summary.total_visitors],
+        ['Connected', summary.currently_connected],
+        ['Active', summary.active],
+        ['Errors today', summary.errors_today],
+        ['Idle', summary.idle],
+        ['Background tabs', summary.background],
+        ['Offline', summary.offline],
+        ['Top browser', summary.most_common_browser || 'n/a']
+      ].map(([k,v]) => `<div class="card"><div class="label">${k}</div><div class="value">${v}</div></div>`).join('');
+      renderList();
+      renderTree();
+    }
+    function renderList() {
+      $('sessions').innerHTML = sessions.map(s => `<div class="row" data-id="${s.session_id}"><span class="dot ${s.state}"></span><div><strong>${s.browser || 'Unknown browser'}</strong><div class="label">${s.os || 'Unknown OS'} · ${s.device || 'device'} · ${s.route || '/'}</div></div><span class="label">${s.state}</span></div>`).join('');
+      document.querySelectorAll('.row').forEach(row => row.onclick = () => selectSession(row.dataset.id));
+    }
+    function renderTree() {
+      const groups = {
+        'tree-online': s => ['CONNECTED','ACTIVE'].includes(s.state),
+        'tree-active': s => s.state === 'ACTIVE',
+        'tree-idle': s => s.state === 'IDLE',
+        'tree-background': s => s.state === 'BACKGROUND',
+        'tree-offline': s => ['OFFLINE','DISCONNECTED'].includes(s.state),
+        'tree-desktop': s => s.device === 'desktop',
+        'tree-mobile': s => s.device === 'mobile'
+      };
+      Object.entries(groups).forEach(([id, pred]) => $(id).innerHTML = sessions.filter(pred).slice(0, 40).map(s => `<div class="label">● ${s.browser || 'Browser'} ${s.session_id.slice(0, 8)}</div>`).join('') || '<div class="label">None</div>');
+    }
+    async function selectSession(id) {
+      selected = sessions.find(s => s.session_id === id);
+      $('selected-title').textContent = selected ? `${selected.browser || 'Client'} ${id.slice(0, 8)}` : 'Select a client';
+      $('ask-username').disabled = !selected;
+      $('send-message').disabled = !selected;
+      $('show-image').disabled = !selected;
+      $('open-frame').disabled = !selected;
+      const events = await fetch('/api/dashboard/sessions/' + encodeURIComponent(id) + '/events').then(r => r.json());
+      $('details').textContent = JSON.stringify({ overview: selected, timeline: events }, null, 2);
+    }
+    async function sendAction(type, parameters) {
+      if (!selected) return;
+      $('action-status').textContent = 'Sending client interaction...';
+      const expires = new Date(Date.now() + 2 * 60 * 1000).toISOString();
+      const response = await fetch('/api/actions', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          session_id: selected.session_id,
+          type,
+          parameters,
+          expires_at: expires
+        })
+      });
+      if (!response.ok) {
+        $('action-status').textContent = 'Could not send prompt.';
+        return;
+      }
+      const action = await response.json();
+      $('action-status').textContent = `Prompt sent: ${action.action_id}`;
+      setTimeout(() => selectSession(selected.session_id), 1500);
+    }
+    async function requestSupportUsername() {
+      await sendAction('REQUEST_SUPPORT_USERNAME', {
+        prompt: 'Support is asking for your username or display name. Do not enter a password, email, phone number, OTP, or token.'
+      });
+    }
+    async function sendSupportMessage() {
+      const message = $('support-message').value.trim();
+      if (!message) {
+        $('action-status').textContent = 'Enter a message first.';
+        return;
+      }
+      await sendAction('DISPLAY_SUPPORT_MESSAGE', {
+        title: $('support-title').value.trim() || 'Support message',
+        message,
+        require_acknowledgement: true
+      });
+    }
+    async function showSupportImage() {
+      const imageUrl = $('support-image-url').value.trim();
+      if (!imageUrl) {
+        $('action-status').textContent = 'Enter an image URL first.';
+        return;
+      }
+      await sendAction('DISPLAY_SUPPORT_IMAGE', {
+        title: $('support-title').value.trim() || 'Support image',
+        image_url: imageUrl,
+        caption: $('support-image-caption').value.trim() || null
+      });
+    }
+    async function openSupportFrame() {
+      const frameUrl = $('support-frame-url').value.trim();
+      if (!frameUrl) {
+        $('action-status').textContent = 'Enter an approved support page URL first.';
+        return;
+      }
+      await sendAction('OPEN_APPROVED_SUPPORT_IFRAME', {
+        title: $('support-title').value.trim() || 'Support page',
+        url: frameUrl
+      });
+    }
+    $('search').oninput = () => load();
+    $('state').onchange = () => load();
+    $('ask-username').onclick = () => requestSupportUsername();
+    $('send-message').onclick = () => sendSupportMessage();
+    $('show-image').onclick = () => showSupportImage();
+    $('open-frame').onclick = () => openSupportFrame();
+    setInterval(load, 5000);
+    load();
+  </script>
+</body>
+</html>
