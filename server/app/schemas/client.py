@@ -47,6 +47,24 @@ class HeartbeatRequest(BaseModel):
     latency_ms: int | None = Field(default=None, ge=0, le=60_000)
 
 
+class ClientIdentityRequest(BaseModel):
+    session_id: str
+    project_id: str
+    display_name: str = Field(min_length=1, max_length=80)
+
+    @field_validator("display_name")
+    @classmethod
+    def reject_sensitive_display_names(cls, value: str) -> str:
+        clean = " ".join(value.strip().split())
+        lowered = clean.lower()
+        blocked_terms = ["password", "passcode", "otp", "token", "secret", "cookie", "authorization", "bearer", "jwt"]
+        if any(term in lowered for term in blocked_terms):
+            raise ValueError("Display name looks sensitive")
+        if "@" in clean or any(char.isdigit() for char in clean if char not in " -_."):
+            raise ValueError("Use a non-sensitive display name, not an email or phone number")
+        return clean
+
+
 class ClientEventRequest(BaseModel):
     event_id: str = Field(min_length=16, max_length=64)
     session_id: str

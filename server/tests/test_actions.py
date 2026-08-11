@@ -34,6 +34,11 @@ def test_accepts_https_support_image():
     assert result["image_url"] == "https://example.com/help.png"
 
 
+def test_rejects_non_file_image_url():
+    with pytest.raises(ValueError):
+        validate_action_parameters("DISPLAY_SUPPORT_IMAGE", {"image_url": "https://encrypted-tbn0.gstatic.com/images?q=abc"})
+
+
 def test_rejects_javascript_image_url():
     with pytest.raises(ValueError):
         validate_action_parameters("DISPLAY_SUPPORT_IMAGE", {"image_url": "javascript:alert(1)"})

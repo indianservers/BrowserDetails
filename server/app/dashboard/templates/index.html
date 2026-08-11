@@ -5,41 +5,135 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Browser Monitor</title>
   <style>
-    :root { color-scheme: light dark; --bg: #f7f8fa; --panel: #ffffff; --line: #d5d9e2; --text: #1c2430; --muted: #64748b; --accent: #0f766e; --warn: #b45309; }
-    @media (prefers-color-scheme: dark) { :root { --bg: #111417; --panel: #181d22; --line: #303842; --text: #e5e7eb; --muted: #9aa4b2; --accent: #2dd4bf; --warn: #fbbf24; } }
+    :root {
+      color-scheme: light;
+      --bg: #f4f7f9;
+      --panel: #ffffff;
+      --panel-strong: #f8fafc;
+      --line: #d9e2ea;
+      --line-hot: #0f766e;
+      --text: #162235;
+      --muted: #64748b;
+      --accent: #0f766e;
+      --cyan: #0ea5a4;
+      --warn: #a16207;
+      --danger: #b42318;
+      --shadow: rgba(15, 23, 42, .08);
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; background: var(--bg); color: var(--text); }
-    header { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: 1px solid var(--line); background: var(--panel); }
-    header h1 { font-size: 18px; margin: 0; font-weight: 650; }
-    main { display: grid; grid-template-columns: 280px 1fr 380px; min-height: calc(100vh - 56px); }
-    aside, section { border-right: 1px solid var(--line); padding: 14px; overflow: auto; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: auto;
+    }
+    header {
+      height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: 0 8px 24px var(--shadow);
+    }
+    header h1 {
+      font-size: 18px;
+      margin: 0;
+      font-weight: 800;
+      color: var(--text);
+    }
+    main { display: grid; grid-template-columns: 280px 1fr 380px; height: calc(100vh - 58px); min-height: 0; }
+    aside, section {
+      border-right: 1px solid var(--line);
+      padding: 14px;
+      overflow: auto;
+      background: var(--bg);
+    }
     .right { border-right: 0; }
     .cards { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; margin-bottom: 14px; }
-    .card, .row, details { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
-    .card { padding: 12px; }
+    .card, .row, details {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px var(--shadow);
+    }
+    .card { padding: 12px; position: relative; overflow: hidden; }
+    .card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: var(--accent);
+    }
     .label { color: var(--muted); font-size: 12px; }
-    .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+    .value { font-size: 24px; font-weight: 800; margin-top: 4px; color: var(--text); }
     details { margin-bottom: 8px; padding: 8px 10px; }
-    summary { cursor: pointer; font-weight: 650; }
+    summary { cursor: pointer; font-weight: 750; color: var(--text); }
+    .tree-client { margin: 6px 0; padding: 6px 0; border-top: 1px solid var(--line); }
+    .tree-client:first-child { border-top: 0; }
+    .tree-client summary { display: grid; grid-template-columns: 10px 1fr; gap: 7px; align-items: center; font-weight: 550; }
+    .tree-client .label { margin: 4px 0 0 17px; }
+    .tree-command { margin: 7px 0 0 17px; padding: 6px 8px; font-size: 12px; }
     .row { display: grid; grid-template-columns: 12px 1fr auto; gap: 10px; align-items: center; padding: 10px; margin-bottom: 8px; cursor: pointer; }
-    .row:hover { border-color: var(--accent); }
-    .dot { width: 10px; height: 10px; border-radius: 99px; background: var(--muted); }
-    .ACTIVE, .CONNECTED { background: var(--accent); }
-    .IDLE, .BACKGROUND { background: var(--warn); }
-    input, select, button { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--panel); color: var(--text); }
+    .row:hover, .row.selected { border-color: var(--line-hot); box-shadow: 0 8px 24px var(--shadow); }
+    .dot { width: 10px; height: 10px; border-radius: 99px; background: var(--muted); box-shadow: 0 0 12px currentColor; }
+    .ACTIVE, .CONNECTED { background: var(--accent); color: var(--accent); }
+    .IDLE, .BACKGROUND { background: var(--warn); color: var(--warn); }
+    .ws-badge { display: inline-block; margin-left: 6px; color: var(--accent); font-size: 12px; font-weight: 650; }
+    input, select, button {
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 8px 10px;
+      background: var(--panel);
+      color: var(--text);
+      font: inherit;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: 1px solid var(--cyan);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, .12);
+    }
+    button {
+      cursor: pointer;
+      background: #0f766e;
+      border-color: #0f766e;
+      color: white;
+      letter-spacing: 0;
+      font-weight: 700;
+    }
+    button:hover:not(:disabled) { background: #115e59; border-color: #115e59; }
     .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
-    .workspace h2 { margin-top: 0; }
+    .workspace h2 { margin-top: 0; color: var(--text); }
     .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-    .tabs button { cursor: pointer; }
+    .tabs button { cursor: pointer; color: var(--cyan); }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; }
+    .command-console { display: grid; gap: 10px; margin-bottom: 12px; }
+    .command-group { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--panel); margin-bottom: 10px; }
+    .command-group .actions { margin: 6px 0 0; }
+    .command-group button { font-size: 12px; }
     .interaction-panel { display: grid; gap: 8px; margin: 0 0 10px; }
     .interaction-panel textarea { min-height: 78px; resize: vertical; }
-    .interaction-panel textarea, .interaction-panel input { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--panel); color: var(--text); }
+    .interaction-panel textarea, .interaction-panel input { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; background: var(--panel); color: var(--text); font: inherit; }
     .actions button:disabled { opacity: .45; cursor: not-allowed; }
-    #action-status { min-height: 18px; margin-bottom: 8px; }
-    pre { white-space: pre-wrap; word-break: break-word; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
-    @media (max-width: 1100px) { main { grid-template-columns: 230px 1fr; } .right { grid-column: 1 / -1; border-top: 1px solid var(--line); } .cards { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 720px) { main { display: block; } aside, section { border-right: 0; border-bottom: 1px solid var(--line); } }
+    #action-status { min-height: 18px; margin-bottom: 8px; color: var(--warn); }
+    .chat-log { min-height: 120px; max-height: 220px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; padding: 8px; background: var(--panel-strong); }
+    .chat-compose { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    .chat-compose textarea { min-height: 64px; }
+    .chat-compose button { min-width: 84px; }
+    .section-label { color: var(--muted); font-size: 12px; font-weight: 800; margin-top: 4px; }
+    .chat-line { margin: 0 0 8px; color: var(--text); }
+    .chat-line strong { color: var(--warn); }
+    .quick-panel { display: grid; gap: 14px; }
+    .quick-card { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+    .quick-card h3 { margin: 0; font-size: 15px; }
+    .quick-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+    .secondary-actions button { background: var(--panel); color: var(--text); border-color: var(--line); }
+    pre { white-space: pre-wrap; word-break: break-word; background: var(--panel-strong); border: 1px solid var(--line); border-radius: 8px; padding: 10px; color: var(--text); }
+    @media (max-width: 1100px) { main { grid-template-columns: 230px 1fr; height: auto; min-height: calc(100vh - 58px); } .right { grid-column: 1 / -1; border-top: 1px solid var(--line); } .cards { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 720px) { main { display: block; height: auto; } aside, section { border-right: 0; border-bottom: 1px solid var(--line); } }
   </style>
 </head>
 <body>
@@ -65,33 +159,54 @@
           <option value="">All states</option>
           <option>CONNECTED</option><option>ACTIVE</option><option>IDLE</option><option>BACKGROUND</option><option>OFFLINE</option><option>DISCONNECTED</option>
         </select>
+        <label class="label"><input id="include-stale" type="checkbox"> Old logs</label>
       </div>
       <div id="sessions"></div>
     </section>
     <section class="right workspace">
       <h2 id="selected-title">Select a client</h2>
-      <div class="tabs">
-        <button data-tab="overview">Overview</button>
-        <button data-tab="timeline">Timeline</button>
-        <button data-tab="logs">Logs</button>
-      </div>
-      <div class="actions">
-        <button id="ask-username" disabled>Ask username</button>
-        <button id="send-message" disabled>Send message</button>
-        <button id="show-image" disabled>Show image</button>
-        <button id="open-frame" disabled>Open frame</button>
-        <button id="show-banner" disabled>Show banner</button>
-        <button id="highlight-element" disabled>Highlight</button>
-        <button id="scroll-element" disabled>Scroll</button>
-        <button id="clear-overlays" disabled>Clear UI</button>
-      </div>
-      <div class="interaction-panel">
-        <input id="support-title" maxlength="80" placeholder="Support title">
-        <textarea id="support-message" maxlength="1000" placeholder="Message to show in the client browser"></textarea>
-        <input id="support-image-url" maxlength="1024" placeholder="https://example.com/support-image.png">
-        <input id="support-image-caption" maxlength="300" placeholder="Optional image caption">
-        <input id="support-frame-url" maxlength="512" placeholder="Approved support page URL for iframe">
-        <input id="support-selector" maxlength="160" placeholder="CSS selector, for example #checkout-button">
+      <div class="quick-panel">
+        <div class="quick-card">
+          <h3>Show Image</h3>
+          <input id="quick-image-file" data-client-command disabled type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/avif">
+          <div class="quick-row">
+            <input id="quick-image-url" data-client-command disabled maxlength="1024" placeholder="Or paste direct image URL">
+            <button id="show-image" data-client-command disabled>Show</button>
+          </div>
+        </div>
+        <div class="quick-card">
+          <h3>Show Message</h3>
+          <div class="quick-row">
+            <textarea id="quick-message" data-client-command disabled maxlength="1000" placeholder="Type one message"></textarea>
+            <button id="send-message" data-client-command disabled>Show</button>
+          </div>
+        </div>
+        <div class="quick-card">
+          <h3>Show Webpage</h3>
+          <div class="quick-row">
+            <input id="quick-frame-url" data-client-command disabled maxlength="512" placeholder="Approved iframe URL">
+            <button id="open-frame" data-client-command disabled>Show</button>
+          </div>
+        </div>
+        <div class="actions secondary-actions">
+          <button id="show-temp-image" data-client-command disabled>Demo image</button>
+          <button id="clear-overlays" data-client-command disabled>Clear client UI</button>
+          <button id="ask-refresh" data-client-command disabled>Refresh client</button>
+        </div>
+        <details>
+          <summary>Diagnostics</summary>
+          <div class="actions">
+            <button id="refresh-info" data-client-command disabled>Browser info</button>
+            <button id="api-latency" data-client-command disabled>API latency</button>
+            <button id="ws-latency" data-client-command disabled>WS latency</button>
+            <button id="browser-apis" data-client-command disabled>Browser APIs</button>
+            <button id="viewport" data-client-command disabled>Viewport</button>
+            <button id="performance" data-client-command disabled>Performance</button>
+            <button id="sdk-version" data-client-command disabled>SDK version</button>
+            <button id="health-check" data-client-command disabled>Health check</button>
+            <button id="reconnect-client" data-client-command disabled>Reconnect</button>
+          </div>
+        </details>
       </div>
       <div class="label" id="action-status"></div>
       <pre id="details">No client selected.</pre>
@@ -101,12 +216,25 @@
     let sessions = [];
     let selected = null;
     const $ = (id) => document.getElementById(id);
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]));
+    }
     async function load() {
       const [summary, list] = await Promise.all([
         fetch('/api/dashboard/summary').then(r => r.json()),
-        fetch('/api/dashboard/sessions?q=' + encodeURIComponent($('search').value) + '&state=' + encodeURIComponent($('state').value)).then(r => r.json())
+        fetch('/api/dashboard/sessions?q=' + encodeURIComponent($('search').value) + '&state=' + encodeURIComponent($('state').value) + '&include_stale=' + $('include-stale').checked).then(r => r.json())
       ]);
       sessions = list;
+      if (selected) {
+        const freshSelected = sessions.find(s => s.session_id === selected.session_id);
+        if (freshSelected) selected = freshSelected;
+      }
       $('cards').innerHTML = [
         ['Total visitors', summary.total_visitors],
         ['Connected', summary.currently_connected],
@@ -115,14 +243,29 @@
         ['Idle', summary.idle],
         ['Background tabs', summary.background],
         ['Offline', summary.offline],
-        ['Top browser', summary.most_common_browser || 'n/a']
+        ['Client IP', summary.primary_client_ip || 'n/a']
       ].map(([k,v]) => `<div class="card"><div class="label">${k}</div><div class="value">${v}</div></div>`).join('');
       renderList();
       renderTree();
     }
     function renderList() {
-      $('sessions').innerHTML = sessions.map(s => `<div class="row" data-id="${s.session_id}"><span class="dot ${s.state}"></span><div><strong>${s.browser || 'Unknown browser'}</strong><div class="label">${s.os || 'Unknown OS'} · ${s.device || 'device'} · ${s.route || '/'}</div></div><span class="label">${s.state}</span></div>`).join('');
-      document.querySelectorAll('.row').forEach(row => row.onclick = () => selectSession(row.dataset.id));
+      $('sessions').innerHTML = sessions.map(s => `<div class="row ${selected?.session_id === s.session_id ? 'selected' : ''}" data-id="${escapeHtml(s.session_id)}"><span class="dot ${escapeHtml(s.state)}"></span><div><strong>${escapeHtml(s.client_name || s.client_ip || 'Client')}</strong><div class="label">${escapeHtml(s.client_ip || 'IP unavailable')} · ${escapeHtml(s.os || 'Unknown OS')} · ${escapeHtml(s.route || '/')}</div></div><span class="label">${escapeHtml(s.live_ws ? 'LIVE' : s.state)}</span></div>`).join('');
+    }
+    function treeClient(s) {
+      const id = escapeHtml(s.session_id);
+      const state = escapeHtml(s.state);
+      return `
+        <details class="tree-client">
+          <summary><span class="dot ${state}"></span><span>${escapeHtml(s.client_ip || 'IP unavailable')} ${escapeHtml(s.session_id.slice(0, 8))}${s.live_ws ? '<span class="ws-badge">Live WS</span>' : ''}</span></summary>
+          <div class="label">Name: ${escapeHtml(s.client_name || 'not saved')}</div>
+          <div class="label">IP: ${escapeHtml(s.client_ip || 'unavailable')}</div>
+          <div class="label">Browser/OS: ${escapeHtml(s.browser || 'Unknown')} / ${escapeHtml(s.os || 'Unknown')}</div>
+          <div class="label">WebSocket: ${s.live_ws ? 'connected' : 'not live'}</div>
+          <div class="label">Visitor: ${escapeHtml(s.visitor_id.slice(0, 12))}</div>
+          <div class="label">Route: ${escapeHtml(s.route || '/')}</div>
+          <div class="label">State: ${state}</div>
+          <button type="button" class="tree-command" data-command="request-username" data-session="${id}">Request username</button>
+        </details>`;
     }
     function renderTree() {
       const groups = {
@@ -134,132 +277,197 @@
         'tree-desktop': s => s.device === 'desktop',
         'tree-mobile': s => s.device === 'mobile'
       };
-      Object.entries(groups).forEach(([id, pred]) => $(id).innerHTML = sessions.filter(pred).slice(0, 40).map(s => `<div class="label">● ${s.browser || 'Browser'} ${s.session_id.slice(0, 8)}</div>`).join('') || '<div class="label">None</div>');
+      Object.entries(groups).forEach(([id, pred]) => $(id).innerHTML = sessions.filter(pred).slice(0, 40).map(treeClient).join('') || '<div class="label">None</div>');
+      document.querySelectorAll('[data-command="request-username"]').forEach(button => {
+        button.onclick = (event) => {
+          event.stopPropagation();
+          requestSupportUsername(button.dataset.session);
+        };
+      });
     }
     async function selectSession(id) {
       selected = sessions.find(s => s.session_id === id);
-      $('selected-title').textContent = selected ? `${selected.browser || 'Client'} ${id.slice(0, 8)}` : 'Select a client';
-      $('ask-username').disabled = !selected;
-      $('send-message').disabled = !selected;
-      $('show-image').disabled = !selected;
-      $('open-frame').disabled = !selected;
-      $('show-banner').disabled = !selected;
-      $('highlight-element').disabled = !selected;
-      $('scroll-element').disabled = !selected;
-      $('clear-overlays').disabled = !selected;
+      $('selected-title').textContent = selected ? `${selected.client_name || selected.client_ip || 'Client'} ${id.slice(0, 8)}` : 'Select a client';
+      document.querySelectorAll('[data-client-command]').forEach(button => button.disabled = !selected);
       const events = await fetch('/api/dashboard/sessions/' + encodeURIComponent(id) + '/events').then(r => r.json());
+      renderChat(events);
       $('details').textContent = JSON.stringify({ overview: selected, timeline: events }, null, 2);
     }
-    async function sendAction(type, parameters) {
-      if (!selected) return;
-      $('action-status').textContent = 'Sending client interaction...';
+    function renderChat(events = []) {
+      const chatEvents = events
+        .filter(event => event.category === 'chat' && event.name === 'chat_message')
+        .slice(0, 30)
+        .reverse();
+      $('chat-log').innerHTML = chatEvents.map(event => {
+        const payload = event.payload || {};
+        const sender = payload.sender || 'client';
+        const message = payload.message || '';
+        return `<div class="chat-line"><strong>${escapeHtml(sender)}:</strong> ${escapeHtml(message)}</div>`;
+      }).join('') || '<div class="label">No chat yet</div>';
+      $('chat-log').scrollTop = $('chat-log').scrollHeight;
+    }
+    async function sendAction(type, parameters, sessionId) {
+      const target = sessionId ? sessions.find(s => s.session_id === sessionId) : selected;
+      if (!target) return;
+      selected = target;
+      $('action-status').textContent = target.live_ws ? 'Sending live WebSocket command...' : 'Client is not live. Queueing command for polling...';
       const expires = new Date(Date.now() + 2 * 60 * 1000).toISOString();
-      const response = await fetch('/api/actions', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          session_id: selected.session_id,
-          type,
-          parameters,
-          expires_at: expires
-        })
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      let response;
+      try {
+        response = await fetch('/api/actions', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          signal: controller.signal,
+          body: JSON.stringify({
+            session_id: target.session_id,
+            type,
+            parameters,
+            expires_at: expires
+          })
+        });
+      } catch (error) {
+        $('action-status').textContent = error.name === 'AbortError'
+          ? 'Command request timed out. Check that the server is reachable.'
+          : 'Command request failed. Check the server connection.';
+        return;
+      } finally {
+        clearTimeout(timeout);
+      }
       if (!response.ok) {
-        $('action-status').textContent = 'Could not send prompt.';
+        let detail = 'Could not send prompt.';
+        try {
+          const error = await response.json();
+          if (typeof error.detail === 'string') detail = error.detail;
+          else if (Array.isArray(error.detail)) detail = error.detail.map(item => item.msg || item.detail || 'Invalid value').join('; ');
+        } catch {
+          detail = await response.text() || detail;
+        }
+        $('action-status').textContent = detail;
         return;
       }
       const action = await response.json();
-      $('action-status').textContent = `Prompt sent: ${action.action_id}`;
-      setTimeout(() => selectSession(selected.session_id), 1500);
+      $('action-status').textContent = action.delivered_live
+        ? `Sent live over WebSocket: ${action.action_id}`
+        : `Queued for client polling: ${action.action_id}`;
+      setTimeout(() => selectSession(target.session_id), 1500);
     }
-    async function requestSupportUsername() {
-      await sendAction('REQUEST_SUPPORT_USERNAME', {
-        prompt: 'Support is asking for your username or display name. Do not enter a password, email, phone number, OTP, or token.'
+    function readImageFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        if (!file) return resolve(null);
+        if (!/^image\/(png|jpeg|gif|webp|avif)$/.test(file.type)) return reject(new Error('Choose a PNG, JPG, GIF, WebP, or AVIF image.'));
+        if (file.size > 1024 * 1024) return reject(new Error('Choose an image smaller than 1 MB.'));
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Could not read image file.'));
+        reader.readAsDataURL(file);
       });
     }
+    async function requestSupportUsername(sessionId) {
+      await sendAction('REQUEST_SUPPORT_USERNAME', {
+        prompt: 'Support is asking for your username or display name. Do not enter a password, email, phone number, OTP, or token.'
+      }, sessionId);
+    }
     async function sendSupportMessage() {
-      const message = $('support-message').value.trim();
+      const message = $('quick-message').value.trim();
       if (!message) {
-        $('action-status').textContent = 'Enter a message first.';
+        $('action-status').textContent = 'Type a message first.';
         return;
       }
       await sendAction('DISPLAY_SUPPORT_MESSAGE', {
-        title: $('support-title').value.trim() || 'Support message',
+        title: 'Support message',
         message,
         require_acknowledgement: true
       });
+      $('quick-message').value = '';
     }
     async function showSupportImage() {
-      const imageUrl = $('support-image-url').value.trim();
-      if (!imageUrl) {
-        $('action-status').textContent = 'Enter an image URL first.';
+      const imageUrl = $('quick-image-url').value.trim();
+      const imageFile = $('quick-image-file').files[0];
+      if (!imageUrl && !imageFile) {
+        $('action-status').textContent = 'Choose an image or paste an image URL.';
+        return;
+      }
+      let imageDataUrl = null;
+      try {
+        imageDataUrl = await readImageFileAsDataUrl(imageFile);
+      } catch (error) {
+        $('action-status').textContent = error.message;
         return;
       }
       await sendAction('DISPLAY_SUPPORT_IMAGE', {
-        title: $('support-title').value.trim() || 'Support image',
-        image_url: imageUrl,
-        caption: $('support-image-caption').value.trim() || null
+        title: 'Support image',
+        image_url: imageDataUrl ? null : imageUrl,
+        image_data_url: imageDataUrl,
+        caption: null
       });
+      $('quick-image-file').value = '';
+      $('quick-image-url').value = '';
+    }
+    async function showTempImage() {
+      await sendAction('REVEAL_TEMP_IMAGE', {});
     }
     async function openSupportFrame() {
-      const frameUrl = $('support-frame-url').value.trim();
+      const frameUrl = $('quick-frame-url').value.trim();
       if (!frameUrl) {
-        $('action-status').textContent = 'Enter an approved support page URL first.';
+        $('action-status').textContent = 'Paste an approved webpage URL first.';
         return;
       }
       await sendAction('OPEN_APPROVED_SUPPORT_IFRAME', {
-        title: $('support-title').value.trim() || 'Support page',
+        title: 'Support page',
         url: frameUrl
-      });
-    }
-    async function showSupportBanner() {
-      const message = $('support-message').value.trim();
-      if (!message) {
-        $('action-status').textContent = 'Enter a banner message first.';
-        return;
-      }
-      await sendAction('SHOW_SUPPORT_BANNER', {
-        message,
-        tone: 'info',
-        duration_seconds: 12
-      });
-    }
-    async function highlightPageElement() {
-      const selector = $('support-selector').value.trim();
-      if (!selector) {
-        $('action-status').textContent = 'Enter a selector first.';
-        return;
-      }
-      await sendAction('HIGHLIGHT_PAGE_ELEMENT', {
-        selector,
-        label: $('support-message').value.trim() || 'Support highlighted this section.'
-      });
-    }
-    async function scrollToPageElement() {
-      const selector = $('support-selector').value.trim();
-      if (!selector) {
-        $('action-status').textContent = 'Enter a selector first.';
-        return;
-      }
-      await sendAction('SCROLL_TO_PAGE_ELEMENT', {
-        selector,
-        label: $('support-message').value.trim() || 'Support moved you to this section.'
       });
     }
     async function clearClientOverlays() {
       await sendAction('CLEAR_SUPPORT_OVERLAYS', {});
     }
+    async function sendSimpleAction(type, parameters = {}) {
+      await sendAction(type, parameters);
+    }
     $('search').oninput = () => load();
+    $('sessions').onclick = event => {
+      const row = event.target.closest('.row');
+      if (row?.dataset.id) void selectSession(row.dataset.id);
+    };
     $('state').onchange = () => load();
-    $('ask-username').onclick = () => requestSupportUsername();
+    $('include-stale').onchange = () => load();
     $('send-message').onclick = () => sendSupportMessage();
+    $('quick-message').addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        void sendSupportMessage();
+      }
+    });
     $('show-image').onclick = () => showSupportImage();
+    $('quick-image-file').onchange = () => {
+      if ($('quick-image-file').files[0]) void showSupportImage();
+    };
+    $('show-temp-image').onclick = () => showTempImage();
     $('open-frame').onclick = () => openSupportFrame();
-    $('show-banner').onclick = () => showSupportBanner();
-    $('highlight-element').onclick = () => highlightPageElement();
-    $('scroll-element').onclick = () => scrollToPageElement();
     $('clear-overlays').onclick = () => clearClientOverlays();
+    $('ask-refresh').onclick = () => sendSimpleAction('ASK_REFRESH_PAGE');
+    $('refresh-info').onclick = () => sendSimpleAction('REFRESH_BROWSER_INFORMATION');
+    $('api-latency').onclick = () => sendSimpleAction('MEASURE_API_LATENCY', { samples: 3 });
+    $('ws-latency').onclick = () => sendSimpleAction('MEASURE_WEBSOCKET_LATENCY', { samples: 3 });
+    $('browser-apis').onclick = () => sendSimpleAction('CHECK_SUPPORTED_BROWSER_APIS');
+    $('viewport').onclick = () => sendSimpleAction('RECALCULATE_VIEWPORT');
+    $('performance').onclick = () => sendSimpleAction('COLLECT_PERFORMANCE_METRICS');
+    $('sdk-version').onclick = () => sendSimpleAction('VERIFY_SDK_VERSION');
+    $('health-check').onclick = () => sendSimpleAction('RUN_APPLICATION_HEALTH_CHECK');
+    $('reconnect-client').onclick = () => sendSimpleAction('REQUEST_RECONNECT');
+    function connectDashboardSocket() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const dashboardSocket = new WebSocket(`${protocol}//${location.host}/ws/dashboard`);
+      dashboardSocket.onmessage = event => {
+        const message = JSON.parse(event.data);
+        if (message.type !== 'chat_message' || !selected || message.session_id !== selected.session_id) return;
+        void selectSession(selected.session_id);
+      };
+      dashboardSocket.onclose = () => setTimeout(connectDashboardSocket, 1500);
+    }
     setInterval(load, 5000);
+    connectDashboardSocket();
     load();
   </script>
 </body>

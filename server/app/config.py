@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     ip_anonymization: bool = True
     max_payload_bytes: int = 16_384
     heartbeat_timeout_seconds: int = 45
+    action_resend_grace_seconds: int = 10
     cors_dashboard_origins: str = "http://localhost:8000"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

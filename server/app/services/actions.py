@@ -1,5 +1,5 @@
 from urllib.parse import urlparse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 
 class EmptyParams(BaseModel):
@@ -26,18 +26,38 @@ class SupportMessageParams(BaseModel):
 class SupportImageParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(default="Support image", min_length=1, max_length=80)
-    image_url: str = Field(min_length=8, max_length=1024)
+    image_url: str | None = Field(default=None, min_length=8, max_length=1024)
+    image_data_url: str | None = Field(default=None, max_length=1_400_000)
     caption: str | None = Field(default=None, max_length=300)
 
     @field_validator("image_url")
     @classmethod
-    def only_http_images(cls, value: str) -> str:
+    def only_http_images(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
         parsed = urlparse(value)
         if parsed.scheme not in {"https", "http"} or not parsed.netloc or parsed.username or parsed.password:
             raise ValueError("Image URL must be an http(s) URL without embedded credentials")
         if parsed.scheme != "https" and parsed.hostname not in {"localhost", "127.0.0.1"}:
             raise ValueError("Image URL must use https outside local development")
+        if not parsed.path.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif")):
+            raise ValueError("Use a direct image file URL ending in .png, .jpg, .jpeg, .gif, .webp, or .avif")
         return value
+
+    @field_validator("image_data_url")
+    @classmethod
+    def only_small_image_data_urls(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not value.startswith(("data:image/png;base64,", "data:image/jpeg;base64,", "data:image/gif;base64,", "data:image/webp;base64,", "data:image/avif;base64,")):
+            raise ValueError("Uploaded image must be PNG, JPG, GIF, WebP, or AVIF")
+        return value
+
+    @model_validator(mode="after")
+    def require_one_image_source(self) -> "SupportImageParams":
+        if bool(self.image_url) == bool(self.image_data_url):
+            raise ValueError("Provide either an image URL or an uploaded image, not both")
+        return self
 
 
 class SupportUsernameParams(BaseModel):
@@ -47,6 +67,16 @@ class SupportUsernameParams(BaseModel):
         min_length=1,
         max_length=220,
     )
+
+
+class SupportChatParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str = Field(min_length=1, max_length=1000)
+
+
+class SupportQuestionParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    question: str = Field(min_length=1, max_length=220)
 
 
 class ApprovedSupportUrlParams(BaseModel):
@@ -98,7 +128,10 @@ ACTION_DESCRIPTIONS = {
     "DISPLAY_SUPPORT_NOTIFICATION": "Display a visible support notification.",
     "DISPLAY_SUPPORT_MESSAGE": "Display a visible in-page support message.",
     "DISPLAY_SUPPORT_IMAGE": "Display a visible in-page support image.",
+    "REVEAL_TEMP_IMAGE": "Reveal the temporary consent-demo image already present in this page.",
     "REQUEST_SUPPORT_USERNAME": "Ask the user for a non-sensitive support username or display name.",
+    "ASK_SUPPORT_QUESTION": "Ask the user a visible support question and return their answer.",
+    "CHAT_FROM_SUPPORT": "Send a visible chat message from support to this page.",
     "SHOW_SUPPORT_BANNER": "Show a visible support banner on the page.",
     "HIGHLIGHT_PAGE_ELEMENT": "Highlight a page element selected by an approved selector.",
     "SCROLL_TO_PAGE_ELEMENT": "Scroll to a page element selected by an approved selector.",
@@ -115,7 +148,9 @@ ACTION_SCHEMAS = {
     "DISPLAY_SUPPORT_NOTIFICATION": SupportNotificationParams,
     "DISPLAY_SUPPORT_MESSAGE": SupportMessageParams,
     "DISPLAY_SUPPORT_IMAGE": SupportImageParams,
+    "CHAT_FROM_SUPPORT": SupportChatParams,
     "REQUEST_SUPPORT_USERNAME": SupportUsernameParams,
+    "ASK_SUPPORT_QUESTION": SupportQuestionParams,
     "SHOW_SUPPORT_BANNER": SupportBannerParams,
     "HIGHLIGHT_PAGE_ELEMENT": PageElementParams,
     "SCROLL_TO_PAGE_ELEMENT": PageElementParams,

@@ -5,15 +5,55 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Browser Monitor Login</title>
   <style>
-    :root { color-scheme: light dark; --bg: #f7f8fa; --panel: #ffffff; --line: #d5d9e2; --text: #1c2430; --accent: #0f766e; }
-    @media (prefers-color-scheme: dark) { :root { --bg: #111417; --panel: #181d22; --line: #303842; --text: #e5e7eb; --accent: #2dd4bf; } }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; background: var(--bg); color: var(--text); }
-    form { width: min(380px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 22px; }
-    h1 { font-size: 20px; margin: 0 0 18px; }
-    label { display: block; font-size: 13px; margin: 12px 0 6px; }
-    input, button { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: var(--panel); color: var(--text); }
-    button { margin-top: 16px; background: var(--accent); border-color: var(--accent); color: #fff; cursor: pointer; }
-    .error { color: #dc2626; min-height: 20px; font-size: 13px; }
+    :root {
+      color-scheme: dark;
+      --bg: #05070a;
+      --panel: rgba(8, 17, 20, .94);
+      --line: rgba(45, 212, 191, .34);
+      --text: #d8fff8;
+      --muted: #7fa6a1;
+      --accent: #2dd4bf;
+      --cyan: #22d3ee;
+      --danger: #fb7185;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Cascadia Code", "Consolas", "SFMono-Regular", ui-monospace, monospace;
+      background:
+        linear-gradient(rgba(34, 211, 238, .04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(45, 212, 191, .035) 1px, transparent 1px),
+        radial-gradient(circle at 50% 12%, rgba(45, 212, 191, .16), transparent 35%),
+        var(--bg);
+      background-size: 22px 22px, 22px 22px, auto, auto;
+      color: var(--text);
+    }
+    body::after {
+      content: "";
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(180deg, rgba(255,255,255,.035) 0 1px, transparent 1px 4px);
+      opacity: .35;
+    }
+    form {
+      width: min(390px, calc(100vw - 32px));
+      background: linear-gradient(180deg, var(--panel), rgba(2, 9, 12, .95));
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 24px;
+      box-shadow: 0 0 44px rgba(45, 212, 191, .16), inset 0 0 0 1px rgba(255,255,255,.025);
+    }
+    h1 { font-size: 20px; margin: 0 0 18px; color: #ecfffb; text-transform: uppercase; text-shadow: 0 0 18px rgba(45, 212, 191, .72); }
+    label { display: block; font-size: 12px; margin: 12px 0 6px; color: var(--muted); text-transform: uppercase; }
+    input, button { width: 100%; border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; background: rgba(2, 10, 13, .92); color: var(--text); font: inherit; }
+    input:focus { outline: 1px solid var(--cyan); box-shadow: 0 0 18px rgba(34, 211, 238, .24); }
+    button { margin-top: 16px; background: linear-gradient(180deg, rgba(16, 185, 129, .26), rgba(5, 150, 105, .16)); border-color: rgba(45, 212, 191, .64); color: #dffff9; cursor: pointer; text-transform: uppercase; }
+    button:hover { border-color: var(--cyan); box-shadow: 0 0 18px rgba(34, 211, 238, .28); }
+    .error { color: var(--danger); min-height: 20px; font-size: 13px; }
   </style>
 </head>
 <body>

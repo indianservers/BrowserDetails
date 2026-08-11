@@ -16,7 +16,10 @@ SafeActionType = Literal[
     "DISPLAY_SUPPORT_NOTIFICATION",
     "DISPLAY_SUPPORT_MESSAGE",
     "DISPLAY_SUPPORT_IMAGE",
+    "REVEAL_TEMP_IMAGE",
     "REQUEST_SUPPORT_USERNAME",
+    "ASK_SUPPORT_QUESTION",
+    "CHAT_FROM_SUPPORT",
     "SHOW_SUPPORT_BANNER",
     "HIGHLIGHT_PAGE_ELEMENT",
     "SCROLL_TO_PAGE_ELEMENT",
@@ -41,3 +44,4 @@ class DiagnosticActionOut(BaseModel):
     parameters: dict[str, Any]
     user_visible_description: str
     expires_at: datetime
+    delivered_live: bool = False

@@ -4,6 +4,13 @@ type ConsentMode = "explicit" | "implied";
 type ConsentState = "GRANTED" | "DENIED" | "WITHDRAWN" | "IMPLIED";
 type SessionState = "ACTIVE" | "IDLE" | "BACKGROUND" | "OFFLINE" | "CONSENT_WITHDRAWN";
 type QueueItem = { id: string; name: string; payload: Record<string, unknown>; createdAt: number };
+type ChatMessage = {
+  messageId: string;
+  sender: "client" | "support";
+  message: string;
+  createdAt: string;
+  deliveredLive?: boolean;
+};
 
 type InitOptions = {
   projectId: string;
@@ -25,6 +32,7 @@ type InitOptions = {
   redactUrlQuery?: boolean;
   healthCheck?: () => Promise<Record<string, unknown>> | Record<string, unknown>;
   diagnosticLogProvider?: () => Promise<Record<string, unknown>> | Record<string, unknown>;
+  onChatMessage?: (message: ChatMessage) => void;
 };
 
 const defaultOptions = {
@@ -43,15 +51,23 @@ let socket: WebSocket | null = null;
 let heartbeatTimer: number | null = null;
 let flushTimer: number | null = null;
 let actionPollTimer: number | null = null;
+let reconnectTimer: number | null = null;
 let reconnectAttempts = 0;
+let connectionGeneration = 0;
 let activityAt = Date.now();
 let registered = false;
+let lastSocketError = "";
 let lastRoute = "";
 let webSocketUrl = "";
 let performanceSnapshot: Record<string, unknown> = {};
 let installed = false;
+let flushingQueue = false;
 const eventQueue: QueueItem[] = [];
+const handledActionIds = new Set<string>();
 const cleanupCallbacks: Array<() => void> = [];
+const TEMP_IMAGE_DATA_URL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#0f766e"/><stop offset=".52" stop-color="#0891b2"/><stop offset="1" stop-color="#111827"/></linearGradient></defs><rect width="640" height="360" fill="url(#g)"/><circle cx="102" cy="88" r="48" fill="#fbbf24" opacity=".9"/><path d="M84 250h472" stroke="#d8fff8" stroke-width="10" stroke-linecap="round" opacity=".72"/><path d="M128 212h384" stroke="#d8fff8" stroke-width="6" stroke-linecap="round" opacity=".56"/><text x="320" y="164" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" font-weight="800" fill="#ffffff">LIVE SUPPORT IMAGE</text><text x="320" y="198" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#ccfbf1">Hidden in the client, revealed by consented server command</text></svg>'
+)}`;
 
 const sensitivePattern = /(password|passcode|otp|token|secret|cookie|authorization|email|phone|card|cvv|ssn|social|bearer|jwt)/i;
 const tokenLikePattern = /(?:eyJ[a-zA-Z0-9_-]{10,}|[a-f0-9]{32,}|[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/;
@@ -291,7 +307,7 @@ function consentPayload() {
   };
 }
 
-async function register() {
+async function register(generation = connectionGeneration) {
   if (!options || !shouldMonitor()) return;
   const response = await post("/api/client/register", {
     project_id: options.projectId,
@@ -305,39 +321,80 @@ async function register() {
     app_version: options.appVersion,
     diagnostics: collectDiagnostics()
   });
-  if (!response?.ok) return;
+  if (!response?.ok || generation !== connectionGeneration) return;
   const body = await response.json();
   registered = true;
   webSocketUrl = body.websocket_url;
-  connectSocket(webSocketUrl);
+  connectSocket(webSocketUrl, generation);
   startHeartbeat(body.heartbeat_interval_seconds || options.heartbeatSeconds);
   startQueueFlush();
   startActionPolling();
   void flushQueue();
 }
 
-function connectSocket(url: string) {
-  if (!shouldMonitor() || !("WebSocket" in window)) return;
-  socket?.close();
-  socket = new WebSocket(url);
-  socket.onopen = () => {
+function connectSocket(url: string, generation = connectionGeneration) {
+  if (!shouldMonitor() || !("WebSocket" in window) || generation !== connectionGeneration) return;
+  if (reconnectTimer) {
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  const activeSocket = new WebSocket(url);
+  socket = activeSocket;
+  activeSocket.onopen = () => {
+    if (socket !== activeSocket || generation !== connectionGeneration) return;
     reconnectAttempts = 0;
+    lastSocketError = "";
+    activeSocket.send(JSON.stringify({ type: "client_ready", session_id: sessionId, at: Date.now() }));
     void emitSafeEvent("reconnected", { transport: "websocket" });
   };
-  socket.onmessage = (event) => {
+  activeSocket.onmessage = (event) => {
+    if (socket !== activeSocket || generation !== connectionGeneration) return;
     try {
       const message = JSON.parse(event.data);
-      if (message.type === "diagnostic_action") void handleAction(message.action);
+      if (message.type === "diagnostic_action") {
+        activeSocket.send(JSON.stringify({ type: "action_ack", action_id: message.action?.action_id, at: Date.now() }));
+        void handleAction(message.action);
+      }
+      if (message.type === "chat_message") {
+        const chatMessage: ChatMessage = {
+          messageId: String(message.message_id || randomId("chat")),
+          sender: "support",
+          message: String(message.message || "").slice(0, 1000),
+          createdAt: String(message.created_at || new Date().toISOString()),
+          deliveredLive: true
+        };
+        if (chatMessage.message) notifyChatMessage(chatMessage);
+        activeSocket.send(JSON.stringify({ type: "chat_ack", message_id: chatMessage.messageId, at: Date.now() }));
+      }
     } catch {
       void emitSafeEvent("sdk_error", { reason: "invalid_websocket_message" });
     }
   };
-  socket.onclose = () => {
-    if (!shouldMonitor()) return;
+  activeSocket.onerror = () => {
+    if (socket !== activeSocket || generation !== connectionGeneration) return;
+    lastSocketError = "WebSocket error";
+  };
+  activeSocket.onclose = () => {
+    if (socket !== activeSocket || generation !== connectionGeneration || !shouldMonitor()) return;
+    socket = null;
+    lastSocketError = "WebSocket closed";
     const delay = Math.min(30000, 1000 * 2 ** reconnectAttempts) + Math.random() * 750;
     reconnectAttempts += 1;
-    window.setTimeout(() => connectSocket(url), delay);
+    reconnectTimer = window.setTimeout(() => {
+      reconnectTimer = null;
+      connectSocket(url, generation);
+    }, delay);
   };
+}
+
+function stopConnection() {
+  connectionGeneration += 1;
+  reconnectAttempts = 0;
+  if (reconnectTimer) window.clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  const activeSocket = socket;
+  socket = null;
+  activeSocket?.close();
 }
 
 function startHeartbeat(seconds: number) {
@@ -363,7 +420,8 @@ function startQueueFlush() {
 
 function startActionPolling() {
   if (actionPollTimer) window.clearInterval(actionPollTimer);
-  actionPollTimer = window.setInterval(() => void pollPendingActions(), 7000);
+  void pollPendingActions();
+  actionPollTimer = window.setInterval(() => void pollPendingActions(), 1500);
 }
 
 async function pollPendingActions() {
@@ -419,19 +477,27 @@ function trimQueue() {
 }
 
 async function flushQueue() {
-  if (!registered || !shouldMonitor()) return;
-  trimQueue();
-  while (eventQueue.length) {
-    const item = eventQueue[0];
-    const response = await post("/api/client/events", {
-      event_id: item.id,
-      session_id: sessionId,
-      project_id: options?.projectId,
-      name: item.name,
-      payload: item.payload
-    });
-    if (!response?.ok) break;
-    eventQueue.shift();
+  if (!registered || !shouldMonitor() || flushingQueue) return;
+  flushingQueue = true;
+  try {
+    trimQueue();
+    while (eventQueue.length) {
+      const item = eventQueue[0];
+      const response = await post("/api/client/events", {
+        event_id: item.id,
+        session_id: sessionId,
+        project_id: options?.projectId,
+        name: item.name,
+        payload: item.payload
+      });
+      if (response?.ok || response?.status === 400) {
+        eventQueue.shift();
+        continue;
+      }
+      break;
+    }
+  } finally {
+    flushingQueue = false;
   }
 }
 
@@ -456,6 +522,7 @@ function addListener(target: EventTarget, event: string, handler: EventListenerO
 function installLifecycleListeners() {
   if (installed) return;
   installed = true;
+  installSupportChatShell();
   ["click", "mousemove", "scroll", "focus", "touchstart"].forEach((event) => {
     addListener(window, event, () => {
       activityAt = Date.now();
@@ -479,6 +546,16 @@ function installLifecycleListeners() {
   addListener(window, "focus", () => void emitSafeEvent("browser_focused", {}));
   addListener(window, "blur", () => void emitSafeEvent("browser_blurred", {}));
   installRouteObserver();
+}
+
+function installSupportChatShell() {
+  if (document.getElementById("client-monitor-temp-image")) return;
+  const hiddenImage = document.createElement("img");
+  hiddenImage.id = "client-monitor-temp-image";
+  hiddenImage.src = TEMP_IMAGE_DATA_URL;
+  hiddenImage.alt = "Temporary support demo";
+  hiddenImage.style.cssText = "display:none;";
+  document.body.append(hiddenImage);
 }
 
 function installRouteObserver() {
@@ -597,6 +674,7 @@ function supportUrlAllowed(url: string): boolean {
 }
 
 function urlIsDisplaySafe(url: string): boolean {
+  if (/^data:image\/(?:png|jpeg|gif|webp|avif);base64,[a-z0-9+/=]+$/i.test(url) && url.length <= 1_400_000) return true;
   try {
     const parsed = new URL(url, location.origin);
     return ["https:", "http:"].includes(parsed.protocol) && !parsed.username && !parsed.password;
@@ -645,11 +723,15 @@ function showSupportMessage(title: string, message: string) {
 
 function showSupportImage(title: string, imageUrl: string, caption?: string) {
   const modal = supportOverlayBase(title || "Support image");
+  const status = document.createElement("p");
+  status.textContent = "Loading image...";
+  status.style.cssText = "line-height:1.4;margin:0 0 10px;color:#475569;";
   const image = document.createElement("img");
   image.src = imageUrl;
   image.alt = caption || "Support-provided image";
-  image.style.cssText = "display:block;max-width:100%;height:auto;border-radius:8px;border:1px solid #e5e7eb;";
-  modal.body.append(image);
+  image.referrerPolicy = "no-referrer";
+  image.style.cssText = "display:none;max-width:100%;height:auto;border-radius:8px;border:1px solid #e5e7eb;";
+  modal.body.append(status, image);
   if (caption) {
     const captionEl = document.createElement("p");
     captionEl.textContent = caption.slice(0, 300);
@@ -657,11 +739,104 @@ function showSupportImage(title: string, imageUrl: string, caption?: string) {
     modal.body.append(captionEl);
   }
   return new Promise<boolean>((resolve) => {
+    let loaded = false;
+    image.onload = () => {
+      loaded = true;
+      status.remove();
+      image.style.display = "block";
+    };
+    image.onerror = () => {
+      image.remove();
+      status.textContent = "The image URL could not be loaded by this browser. Try opening the direct image address in a new tab and use a stable .png, .jpg, .jpeg, .gif, or .webp URL.";
+      status.style.color = "#b91c1c";
+    };
+    modal.close.onclick = () => {
+      modal.overlay.remove();
+      resolve(loaded);
+    };
+  });
+}
+
+function revealTempImage() {
+  installSupportChatShell();
+  const hiddenImage = document.getElementById("client-monitor-temp-image") as HTMLImageElement | null;
+  const modal = supportOverlayBase("Temporary image");
+  const image = document.createElement("img");
+  image.src = hiddenImage?.src || TEMP_IMAGE_DATA_URL;
+  image.alt = "Temporary support demo";
+  image.style.cssText = "display:block;max-width:100%;height:auto;border-radius:8px;border:1px solid #e5e7eb;";
+  const note = document.createElement("p");
+  note.textContent = "This image was already hidden in your browser and was revealed after you granted consent.";
+  note.style.cssText = "line-height:1.4;margin:10px 0 0;color:#475569;";
+  modal.body.append(image, note);
+  return new Promise<boolean>((resolve) => {
     modal.close.onclick = () => {
       modal.overlay.remove();
       resolve(true);
     };
   });
+}
+
+function supportChatPanel() {
+  let panel = document.getElementById("client-monitor-chat-panel") as HTMLDivElement | null;
+  if (panel) return panel;
+  panel = document.createElement("div");
+  panel.id = "client-monitor-chat-panel";
+  panel.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147483646;width:min(360px,calc(100vw - 32px));background:#fff;color:#172033;border:1px solid #d5d9e2;border-radius:10px;box-shadow:0 18px 60px rgba(15,23,42,.28);font-family:system-ui,-apple-system,Segoe UI,sans-serif;overflow:hidden;";
+  const header = document.createElement("div");
+  header.textContent = "Support chat";
+  header.style.cssText = "background:#0f766e;color:#fff;padding:10px 12px;font-weight:700;";
+  const messages = document.createElement("div");
+  messages.id = "client-monitor-chat-messages";
+  messages.style.cssText = "max-height:220px;overflow:auto;padding:10px 12px;";
+  const form = document.createElement("form");
+  form.style.cssText = "display:flex;gap:8px;padding:10px 12px;border-top:1px solid #e5e7eb;";
+  const input = document.createElement("input");
+  input.name = "message";
+  input.maxLength = 500;
+  input.placeholder = "Reply to support";
+  input.style.cssText = "min-width:0;flex:1;border:1px solid #cbd5e1;border-radius:6px;padding:8px;color:#172033;";
+  const button = document.createElement("button");
+  button.type = "submit";
+  button.textContent = "Send";
+  button.style.cssText = "border:1px solid #0f766e;border-radius:6px;background:#0f766e;color:#fff;padding:8px 10px;cursor:pointer;";
+  form.append(input, button);
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    const message = input.value.trim();
+    if (!message) return;
+    input.value = "";
+    const sent = ClientMonitor.sendChat(message);
+    if (!sent.sent) appendChatMessage("System", "Chat is unavailable until consent is granted and the live connection is ready.");
+  };
+  panel.append(header, messages, form);
+  document.body.append(panel);
+  return panel;
+}
+
+function notifyChatMessage(chatMessage: ChatMessage) {
+  window.dispatchEvent(new CustomEvent("client-monitor:chat", { detail: chatMessage }));
+  if (options?.onChatMessage) {
+    options.onChatMessage(chatMessage);
+    return;
+  }
+  appendChatMessage(chatMessage.sender === "client" ? "You" : "Support", chatMessage.message);
+}
+
+function appendChatMessage(sender: string, message: string) {
+  supportChatPanel();
+  const messages = document.getElementById("client-monitor-chat-messages");
+  if (!messages) return;
+  const line = document.createElement("div");
+  line.style.cssText = "margin:0 0 8px;line-height:1.35;";
+  const who = document.createElement("strong");
+  who.textContent = `${sender}: `;
+  who.style.cssText = "color:#0f766e;";
+  const text = document.createElement("span");
+  text.textContent = message.slice(0, 1000);
+  line.append(who, text);
+  messages.append(line);
+  messages.scrollTop = messages.scrollHeight;
 }
 
 function showSupportIframe(title: string, frameUrl: string) {
@@ -759,9 +934,22 @@ async function measureApiLatency(samples: number) {
 }
 
 async function handleAction(action: { action_id: string; type: string; parameters?: Record<string, unknown>; user_visible_description: string; expires_at?: string }) {
-  if (action.expires_at && Date.parse(action.expires_at) < Date.now()) return;
+  if (!action?.action_id || handledActionIds.has(action.action_id)) return;
+  handledActionIds.add(action.action_id);
+  const expiresAt = action.expires_at ? Date.parse(action.expires_at) : Number.NaN;
+  if (Number.isFinite(expiresAt) && expiresAt < Date.now()) return;
   const params = action.parameters || {};
-  const complete = (result: Record<string, unknown>) => post(`/api/actions/${action.action_id}/result`, scrubPayload(result));
+  window.dispatchEvent(new CustomEvent("client-monitor:action", {
+    detail: { stage: "received", actionId: action.action_id, type: action.type, description: action.user_visible_description }
+  }));
+  const complete = async (result: Record<string, unknown>) => {
+    const safeResult = scrubPayload(result);
+    const response = await post(`/api/actions/${action.action_id}/result`, safeResult);
+    window.dispatchEvent(new CustomEvent("client-monitor:action", {
+      detail: { stage: "completed", actionId: action.action_id, type: action.type, description: action.user_visible_description, result: safeResult }
+    }));
+    return response;
+  };
   try {
     switch (action.type) {
       case "REFRESH_BROWSER_INFORMATION":
@@ -797,13 +985,30 @@ async function handleAction(action: { action_id: string; type: string; parameter
         break;
       }
       case "DISPLAY_SUPPORT_IMAGE": {
-        const imageUrl = String(params.image_url || "");
+        const imageUrl = String(params.image_data_url || params.image_url || "");
         if (!urlIsDisplaySafe(imageUrl)) {
           await complete({ displayed: false, reason: "unsafe_image_url" });
           break;
         }
-        const acknowledged = await showSupportImage(String(params.title || "Support image"), imageUrl, params.caption ? String(params.caption) : undefined);
+        const loaded = await showSupportImage(String(params.title || "Support image"), imageUrl, params.caption ? String(params.caption) : undefined);
+        await complete({ displayed: loaded, acknowledged: true, loaded });
+        break;
+      }
+      case "REVEAL_TEMP_IMAGE": {
+        const acknowledged = await revealTempImage();
         await complete({ displayed: true, acknowledged });
+        break;
+      }
+      case "CHAT_FROM_SUPPORT": {
+        const message = String(params.message || "").slice(0, 1000);
+        notifyChatMessage({
+          messageId: String(action.action_id),
+          sender: "support",
+          message,
+          createdAt: new Date().toISOString(),
+          deliveredLive: socket?.readyState === WebSocket.OPEN
+        });
+        await complete({ displayed: true, message });
         break;
       }
       case "REQUEST_SUPPORT_USERNAME": {
@@ -820,6 +1025,22 @@ async function handleAction(action: { action_id: string; type: string; parameter
           break;
         }
         await complete({ prompted: true, accepted: true, username: trimmed });
+        break;
+      }
+      case "ASK_SUPPORT_QUESTION": {
+        const question = String(params.question || action.user_visible_description).slice(0, 220);
+        const answer = window.prompt(question);
+        if (answer === null) {
+          await complete({ prompted: true, answered: false });
+          break;
+        }
+        const trimmed = answer.trim().slice(0, 500);
+        if (!trimmed || isSensitiveInput(trimmed)) {
+          window.alert("That answer looks empty or sensitive, so it was not sent to support.");
+          await complete({ prompted: true, answered: false, rejected: true });
+          break;
+        }
+        await complete({ prompted: true, answered: true, answer: trimmed });
         break;
       }
       case "SHOW_SUPPORT_BANNER":
@@ -917,7 +1138,7 @@ export const ClientMonitor = {
       void emitSafeEvent("consent_withdrawn", { previous });
       eventQueue.length = 0;
       registered = false;
-      socket?.close();
+      stopConnection();
       if (heartbeatTimer) window.clearInterval(heartbeatTimer);
       if (flushTimer) window.clearInterval(flushTimer);
       if (actionPollTimer) window.clearInterval(actionPollTimer);
@@ -936,6 +1157,28 @@ export const ClientMonitor = {
     validateEvent(name, payload);
     return emitSafeEvent(name, payload);
   },
+  sendChat(message: string) {
+    const cleanMessage = message.trim().slice(0, 1000);
+    if (!cleanMessage || !shouldMonitor() || socket?.readyState !== WebSocket.OPEN) {
+      return { sent: false, messageId: "" };
+    }
+    const messageId = randomId("chat");
+    socket.send(JSON.stringify({
+      type: "chat_message",
+      message_id: messageId,
+      sender: "client",
+      message: cleanMessage,
+      at: new Date().toISOString()
+    }));
+    notifyChatMessage({
+      messageId,
+      sender: "client",
+      message: cleanMessage,
+      createdAt: new Date().toISOString(),
+      deliveredLive: true
+    });
+    return { sent: true, messageId };
+  },
   refreshDiagnostics() {
     return emitSafeEvent("diagnostics_refreshed", collectDiagnostics());
   },
@@ -946,6 +1189,9 @@ export const ClientMonitor = {
       consentState,
       state: currentState(),
       connected: socket?.readyState === WebSocket.OPEN,
+      websocketState: socket?.readyState ?? null,
+      websocketUrl: webSocketUrl,
+      lastSocketError,
       registered,
       queuedEvents: eventQueue.length,
       sdkVersion: SDK_VERSION
@@ -958,7 +1204,7 @@ export const ClientMonitor = {
   },
   disconnect() {
     registered = false;
-    socket?.close();
+    stopConnection();
     if (heartbeatTimer) window.clearInterval(heartbeatTimer);
     if (flushTimer) window.clearInterval(flushTimer);
     if (actionPollTimer) window.clearInterval(actionPollTimer);
